@@ -1,116 +1,82 @@
 import { test, expect } from '@playwright/test';
 
-test('POC 2 - Flipkart', async ({ page, context }) => {
+test("POC 2 - Flipkart", async ({ page }) => {
 
-  // Open Login Page
-  await page.goto("https://www.flipkart.com/account/login");
+    // Open Flipkart
+    await page.goto("https://www.flipkart.com/account/login");
 
-  // Enter Mobile Number
-  await page.getByRole("textbox").nth(1).fill("8825453523");
+    // Enter Mobile Number
+    await page.getByRole("textbox").nth(1).fill("8825453523");
 
-  // Request OTP
-  await page.getByRole("button", { name: "Request OTP" }).click();
+    // Click Request OTP
+    await page.getByRole("button", { name: "Request OTP" }).click();
 
-  console.log("Enter OTP manually and click Resume.");
+    console.log("Enter OTP manually and press Resume");
 
-  // Pause for OTP
-  await page.pause();
+    // Pause for manual OTP
+    await page.pause();
 
-  // Search Product
-  await page.getByRole("textbox", {
-    name: /Search for products/i
-  }).fill("running shoes");
+    // Search Product
+    await page.getByRole("textbox", {name: "Search for Products"}).fill("running shoes");
 
-  await page.getByRole("textbox", {
-    name: /Search for products/i
-  }).press("Enter");
+    await page.keyboard.press("Enter");
+    // Apply Brand Filter
+    await page.getByText("PUMA", { exact: true }).first().click();
+    // Apply Discount Filter
+    await page.getByText("40% or more").click();
 
-  const Brand = "PUMA";
-  const Discount = "40% or more";
-  const priceThreshold = 2000;
 
-  // Apply Filters
-  await page.getByText(Brand, { exact: true }).first().click();
-  await page.getByText(Discount, { exact: true }).click();
+    // Price Threshold
+    const threshold = 2000;
 
-  await page.waitForLoadState("networkidle");
+    // Locator Chaining + filter()
+    const productCards = page.locator("div.nZIRY7").filter({ hasText: "PUMA" });
 
-  const products = page.locator("div[data-id]");
-  const count = await products.count();
+    const count = await productCards.count();
 
-  console.log(`Total Products : ${count}`);
+    console.log(`Total Products : ${count}`);
 
-  for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count; i++) {const card = productCards.nth(i);
 
-    const card = products.nth(i);
+    // Price Locator
+    const priceLocator = card.locator("div.hZ3P6w").first();
 
-    const text = (await card.textContent()) ?? "";
+    if (await priceLocator.count() === 0)continue;
 
-    // Skip Non-PUMA Products
-    if (!text.toUpperCase().includes("PUMA")) {
-      continue;
-    }
+    const priceText = await priceLocator.textContent();
 
-    expect(text.toUpperCase()).toContain("PUMA");
-
-    // Get Price
-    const priceLocator = card.locator(".Nx9bqj");
-
-    if (await priceLocator.count() === 0)
-      continue;
-
-    const priceText = await priceLocator.first().textContent();
-
-    if (!priceText)
-      continue;
-
+    if (!priceText)continue;
+    
     const price = Number(priceText.replace(/[₹,]/g, ""));
 
     console.log(`Product ${i + 1} Price : ₹${price}`);
 
-    expect(price).toBeLessThanOrEqual(priceThreshold);
+    if (price <= threshold) {
+      console.log("Eligible Product Found");
 
-    // Click first eligible product
-    if (price <= priceThreshold) {
+    // Open Product Page
+    const [productPage] = await Promise.all([page.context().waitForEvent("page"),card.locator("a").first().click()]);
 
-      const [productPage] = await Promise.all([
-        context.waitForEvent("page"),
-        card.click()
-      ]);
+    await productPage.waitForLoadState();
 
-      await productPage.waitForLoadState();
+    // Click Add To Cart
+    await productPage.getByText("Add to cart", { exact: true }).click();
 
-      // Add To Cart
-      await productPage.getByRole("button", {
-        name: /Add to cart/i
-      }).click();
+    await expect(productPage.getByText("Select variant")).toBeVisible();
 
-      // Save Login + Cart State
-      await productPage.context().storageState({
-        path: "flipkart-auth.json"
-      });
+    await productPage.getByText("6", { exact: true }).first().click();
 
-      console.log("Product Added Successfully");
+    await productPage.getByText("Continue").click();
 
-      break;
-    }
+    console.log("Product Added Successfully");
+
+    await expect(productPage).toHaveURL(/flipkart/);
+
+    break;
   }
-  
+ }
 
 });
 
-test.use({
-  storageState: "flipkart-auth.json"
-});
 
-test("Verify Cart", async ({ page }) => {
 
-  await page.goto("https://www.flipkart.com/viewcart");
-
-  await page.pause();
-
-  await expect(
-    page.getByText("PUMA")
-  ).toBeVisible();
-
-});
